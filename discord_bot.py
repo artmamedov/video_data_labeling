@@ -148,13 +148,6 @@ class FeedbackView(discord.ui.View):
         await send_gif(self.ctx)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        "--token", type=str, nargs="?", default="token",
-    )
-    args_global = parser.parse_args()
-    
     intents = discord.Intents.default()
     intents.message_content = True 
     bot = DiscordDataBot(intents=intents)

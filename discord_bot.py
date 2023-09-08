@@ -39,15 +39,17 @@ class DiscordDataBot(discord.Bot):
         video_stream = container.streams.video[0]
 
         # Process frames concurrently
-        frames = await asyncio.gather(self.decode_frames(container, video_stream, start_frame, num_frames))
-        frames = frames[0]
+        frames = self.decode_frames(container, video_stream, start_frame, num_frames)
+        
+        loop = asyncio.get_event_loop()
+        def save_frames():
+            frames[0].save(filename, 'GIF', append_images=frames[1:], save_all=True, duration=1000 / gif_fps, loop=0, optimize=True)
 
-        # Save to gif file
-        frames[0].save(filename, format='GIF', append_images=frames[1:], save_all=True, duration=1000/gif_fps, loop=0, optimize=True)
+        await loop.run_in_executor(None, save_frames)
 
         return filename
     
-    async def decode_frames(self, container, video_stream, start_frame, num_frames):
+    def decode_frames(self, container, video_stream, start_frame, num_frames):
         frames = []
         for i, frame in enumerate(container.decode(video_stream)):
             if i < start_frame:
@@ -142,8 +144,7 @@ class FeedbackView(discord.ui.View):
         bot.user_history[self.ctx.author.id][self.id]["rating"] = -1
 
     async def report(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        await self.ctx.send(content=f"Video/GIF reported")
+        await interaction.response.send_message("Video/GIF reported")
         await send_gif(self.ctx)
 
 if __name__ == '__main__':

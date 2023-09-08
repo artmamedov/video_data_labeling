@@ -6,6 +6,7 @@ import av
 import discord 
 import uuid
 import asyncio
+from PIL import Image
 from video_fetchers import sakugabooru
 from discord import File
 load_dotenv()
@@ -20,13 +21,13 @@ class DiscordDataBot(discord.Bot):
         self.start_frame = start_frame
         self.num_frames = num_frames
         self.gif_fps = gif_fps
-        self.gif_queue = []
+        self.gif_queue = asyncio.Queue()
 
     def get_params(self, random=False):
         # TODO: Do we need diversity and  randomness here?
         return self.start_frame, self.num_frames, self.gif_fps
 
-    async def download_and_convert_to_gif(self, input_url, start_frame=0, num_frames=96, gif_fps=24):
+    async def download_and_convert_to_gif(self, filename, input_url, start_frame=0, num_frames=96, gif_fps=24):
         # Download the video
         async with aiohttp.ClientSession() as session:
             async with session.get(input_url) as response:
@@ -41,12 +42,10 @@ class DiscordDataBot(discord.Bot):
         frames = await asyncio.gather(self.decode_frames(container, video_stream, start_frame, num_frames))
         frames = frames[0]
 
-        # Convert to gif
-        gif_buffer = io.BytesIO()
-        frames[0].save(gif_buffer, format='GIF', append_images=frames[1:], save_all=True, duration=1000/gif_fps, loop=0, optimize=True)
-        gif_buffer.seek(0)
+        # Save to gif file
+        frames[0].save(filename, format='GIF', append_images=frames[1:], save_all=True, duration=1000/gif_fps, loop=0, optimize=True)
 
-        return gif_buffer
+        return filename
     
     async def decode_frames(self, container, video_stream, start_frame, num_frames):
         frames = []
@@ -118,7 +117,7 @@ class FeedbackView(discord.ui.View):
         await interaction.message.delete()
 
     async def skip(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await interaction.response.send_message("Skipping gif, sending next one...")
         if interaction.user.id in bot.waiting_for_input:
             del bot.waiting_for_input[interaction.user.id]
         await send_gif(self.ctx) 
@@ -161,21 +160,26 @@ if __name__ == '__main__':
         while True:
             url = None
             gif_data = None
-            if len(bot.gif_queue) < 10:  # Only fetch if we need to
-                print(len(bot.gif_queue))
+            if bot.gif_queue.qsize() < 10:
+                filename = f"{uuid.uuid4()}.gif"                
                 start_frame, num_frames, gif_fps = bot.get_params()
                 url = sakugabooru.get_random_sakugabooru_video()
                 if url:
-                    gif_data = await bot.download_and_convert_to_gif(url, start_frame=start_frame, num_frames=num_frames, gif_fps=gif_fps)
+                    await bot.download_and_convert_to_gif(filename, url, start_frame=start_frame, num_frames=num_frames, gif_fps=gif_fps)
+                    try:
+                        gif_data = Image.open(filename)
+                    except Exception as e:
+                        print(f"Failed to get gif: {e}")
+                        gif_data = None
                 if gif_data:
-                    bot.gif_queue.append({
+                    await bot.gif_queue.put({
+                        "filename": filename,
                         "url": url,
-                        "gif_data" : gif_data, 
                         "start_frame" : start_frame, 
                         "num_frames" : num_frames, 
                         "fps" : gif_fps
                     })
-            await asyncio.sleep(2)  # Avoid constant looping, adjust sleep as needed
+            await asyncio.sleep(2)
 
 
     @bot.event
@@ -213,19 +217,14 @@ if __name__ == '__main__':
 
     @bot.command(description="Labeling GIF")
     async def start_labeling(ctx):
-        # Respond immediately
         await ctx.respond("Fetching your gif... Please wait.")
         await send_gif(ctx)
 
     async def send_gif(ctx):
-        while not bot.gif_queue:            
-            print(f"Queue length during loop: {len(bot.gif_queue)}")
-            await asyncio.sleep(1)
-        print(f"Moved past this step {len(bot.gif_queue)}")
-        id = f"{ctx.author.id}_{str(uuid.uuid4())}"
-        gif = bot.gif_queue.pop()
-        gif_data = gif["gif_data"]
-        if not gif_data:
+        id = f"{ctx.author.id}_{uuid.uuid4()}"
+        gif = await bot.gif_queue.get()
+        filename = gif["filename"]
+        if not gif:
             await ctx.send("Sorry, I couldn't fetch a random GIF.")
             return
 
@@ -242,8 +241,12 @@ if __name__ == '__main__':
             "num_frames": gif["num_frames"]
         }
 
-        message = await ctx.send(content=f"{ctx.author.mention}, please type in the chat a description of what's happening in this video/gif", file=File(gif_data, filename=f"{id}.gif"), view=FeedbackView(ctx, id=id))
-        
+        message = await ctx.send(
+            content=f"{ctx.author.mention}, please type in the chat a description of what's happening in this video/gif", 
+            file=File(filename, filename=f"{id}.gif"), 
+            view=FeedbackView(ctx, id=id)
+        )        
+        os.remove(filename)
         bot.waiting_for_input[ctx.author.id] = {"ctx": ctx, "message_id": message.id}
 
     print("Running...")

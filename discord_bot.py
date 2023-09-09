@@ -173,6 +173,7 @@ if __name__ == '__main__':
                         print(f"Failed to get gif: {e}")
                         gif_data = None
                 if gif_data:
+                    await asyncio.sleep(1)
                     await bot.gif_queue.put({
                         "filename": filename,
                         "url": url,
@@ -180,7 +181,7 @@ if __name__ == '__main__':
                         "num_frames" : num_frames, 
                         "fps" : gif_fps
                     })
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
 
 
     @bot.event
@@ -247,8 +248,9 @@ if __name__ == '__main__':
             file=File(filename, filename=f"{id}.gif"), 
             view=FeedbackView(ctx, id=id)
         )        
-        os.remove(filename)
         bot.waiting_for_input[ctx.author.id] = {"ctx": ctx, "message_id": message.id}
+        await asyncio.sleep(1)
+        os.remove(filename)
 
     print("Running...")
     bot.run(DISCORD_TOKEN)

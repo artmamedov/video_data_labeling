@@ -1,0 +1,13 @@
+name: video_data_labeling
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - requests
+      - python-dotenv
+      - py-cord
+      - pillow
+      - beautifulsoup4
+      - av

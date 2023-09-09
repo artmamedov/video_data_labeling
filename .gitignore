@@ -3,3 +3,5 @@
 *.pyc
 .env
 *.gif
+discord_bot_instance.sh
+discord_bot_instance_key.pem
